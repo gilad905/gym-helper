@@ -3,6 +3,14 @@ package gymhelper.app.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,12 +36,12 @@ fun SettingsScreen(settings: Settings, onImport: () -> Unit, onExport: () -> Uni
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Timers", style = MaterialTheme.typography.titleMedium)
+        SectionTitle(Icons.Filled.Timer, "Timers")
         DurationSetting("Machine switch", settings.transitionSec) { s -> AppState.updateSettings { it.copy(transitionSec = s) } }
         DurationSetting("Rest when the plan has none", settings.defaultRestSec) { s -> AppState.updateSettings { it.copy(defaultRestSec = s) } }
 
         HorizontalDivider()
-        Text("Alerts", style = MaterialTheme.typography.titleMedium)
+        SectionTitle(Icons.Filled.NotificationsActive, "Alerts")
         SwitchRow("Mute beeps", settings.muted) { AppState.toggleMute() }
         SwitchRow("Vibrate", settings.vibrate) { v -> AppState.updateSettings { it.copy(vibrate = v) } }
         Text(
@@ -44,7 +52,7 @@ fun SettingsScreen(settings: Settings, onImport: () -> Unit, onExport: () -> Uni
         SwitchRow("Keep screen on during workouts", settings.keepScreenOn) { v -> AppState.updateSettings { it.copy(keepScreenOn = v) } }
 
         HorizontalDivider()
-        Text("Plan files", style = MaterialTheme.typography.titleMedium)
+        SectionTitle(Icons.Filled.Folder, "Plan files")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onImport) { Text("Import .md / .zip") }
             OutlinedButton(onClick = onExport) { Text("Export zip") }
@@ -58,6 +66,15 @@ fun SettingsScreen(settings: Settings, onImport: () -> Unit, onExport: () -> Uni
         HorizontalDivider()
         val version = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull()
         Text("Gym Helper $version", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun SectionTitle(icon: ImageVector, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(8.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium)
     }
 }
 

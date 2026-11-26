@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -114,6 +115,12 @@ class WorkoutService : LifecycleService() {
         val name = t.exercise?.name ?: run.workoutName
         val title = if (run.step?.kind == gymhelper.core.StepKind.TRANSITION) "Moving to $name" else name
         b.setContentTitle(title)
+        // Android 16+ "Live Update": shows the countdown as a chip in the status bar, next to the
+        // clock, like the Clock app's timer. Short text is what the chip shows when no timer runs.
+        b.addExtras(Bundle().apply {
+            putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
+            putString(EXTRA_SHORT_CRITICAL_TEXT, chipText(run, t.short))
+        })
         val end = run.endsAt
         when {
             end != null -> {
@@ -128,6 +135,16 @@ class WorkoutService : LifecycleService() {
         return b.build()
     }
 
+    private fun chipText(run: gymhelper.core.RunState, short: String): String {
+        val step = run.step ?: return "Done"
+        if (run.paused) return "Paused"
+        return when (step.kind) {
+            gymhelper.core.StepKind.SET -> "Set ${step.set}/${step.totalSets}"
+            gymhelper.core.StepKind.TRANSITION -> "Move"
+            else -> short.take(10)
+        }
+    }
+
     private fun service(action: String, code: Int) = PendingIntent.getService(
         this, code, Intent(this, WorkoutService::class.java).setAction(action),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
@@ -140,5 +157,8 @@ class WorkoutService : LifecycleService() {
         const val ACTION_SKIP = "skip"
         const val ACTION_MUTE = "mute"
         const val ACTION_STOP = "stop"
+        // Notification.EXTRA_REQUEST_PROMOTED_ONGOING / EXTRA_SHORT_CRITICAL_TEXT (API 36).
+        const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+        const val EXTRA_SHORT_CRITICAL_TEXT = "android.shortCriticalText"
     }
 }

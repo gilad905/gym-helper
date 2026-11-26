@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -65,6 +66,9 @@ object AppState {
     /** Plan editing lock. Always starts locked. */
     val locked: StateFlow<Boolean> = _locked
 
+    /** The plan as it was when editing was unlocked; Cancel goes back to it. */
+    private var draftBase: Plan? = null
+
     private val runner = Runner { i -> exerciseOfRun(i)?.let { it.historyKey to LastNext.snapshot(it) } ?: ("?" to emptyMap()) }
 
     @OptIn(FlowPreview::class)
@@ -76,7 +80,8 @@ object AppState {
         load("settings.json", Settings.serializer())?.let { _settings.value = it }
         load("run.json", RunState.serializer())?.let { _run.value = it }
 
-        _plan.drop(1).debounce(300).onEach { save("plan.json", Plan.serializer(), it) }.launchIn(scope)
+        // While unlocked, edits are only a draft: they're written when you tap Save.
+        _plan.drop(1).debounce(300).onEach { if (_locked.value) save("plan.json", Plan.serializer(), it) }.launchIn(scope)
         _history.drop(1).onEach { save("history.json", History.serializer(), it) }.launchIn(scope)
         _settings.drop(1).onEach { save("settings.json", Settings.serializer(), it) }.launchIn(scope)
         _run.drop(1).debounce(200).onEach {
@@ -101,13 +106,38 @@ object AppState {
 
     // ---- lock, mute, settings ----
 
-    fun toggleLock() { _locked.value = !_locked.value }
+    fun unlock() {
+        draftBase = _plan.value
+        _locked.value = false
+    }
+
+    fun hasUnsavedEdits(): Boolean = draftBase != null && draftBase != _plan.value
+
+    /** Keep the edits and lock again. */
+    fun saveEdits() {
+        draftBase = null
+        _locked.value = true
+        val p = _plan.value
+        scope.launch { save("plan.json", Plan.serializer(), p) }
+    }
+
+    /** Throw away everything changed since unlocking, and lock again. */
+    fun cancelEdits() {
+        draftBase?.let { _plan.value = it }
+        draftBase = null
+        _locked.value = true
+    }
     fun toggleMute() { _settings.value = _settings.value.copy(muted = !_settings.value.muted) }
     fun updateSettings(f: (Settings) -> Settings) { _settings.value = f(_settings.value) }
 
     // ---- plan editing ----
 
-    fun setPlan(p: Plan) { _plan.value = p }
+    /** Replaces the plan (import). Saved right away, even while editing is unlocked. */
+    fun setPlan(p: Plan) {
+        _plan.value = p
+        if (draftBase != null) draftBase = p
+        scope.launch { save("plan.json", Plan.serializer(), p) }
+    }
 
     fun updatePlan(f: (Plan) -> Plan) { _plan.value = f(_plan.value) }
 

@@ -5,6 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.filled.EventAvailable
+import androidx.compose.material.icons.filled.History
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -49,6 +54,7 @@ fun HistoryScreen(locked: Boolean, modifier: Modifier = Modifier) {
     if (sessions.isEmpty()) {
         Column(modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Filled.History, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
             Text("No workouts yet", style = MaterialTheme.typography.headlineSmall)
             Text("Finished workouts show up here.")
         }
@@ -61,6 +67,8 @@ fun HistoryScreen(locked: Boolean, modifier: Modifier = Modifier) {
             Card(Modifier.fillMaxWidth().clickable { open = !open }) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(workoutIcon(s.workoutName) ?: Icons.Filled.EventAvailable, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(s.workoutName, style = MaterialTheme.typography.titleMedium)
                             val mins = ((s.endedAt - s.startedAt) / 60000).coerceAtLeast(0)

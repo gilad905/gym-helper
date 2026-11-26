@@ -8,6 +8,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -64,6 +75,11 @@ fun RunScreen(run: RunState, plan: Plan, locked: Boolean, modifier: Modifier = M
     val remaining = run.remainingMs(now)
     val hasTimer = step.kind != StepKind.SET
 
+    val stage = stageOf(step)
+    val colors = stageColors(stage)
+    // The current machine's card is open; the others are collapsed. Moving on re-opens the new one.
+    var expanded by remember(step.exerciseIndex) { mutableStateOf(setOf(step.exerciseIndex)) }
+
     Column(modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
@@ -73,36 +89,46 @@ fun RunScreen(run: RunState, plan: Plan, locked: Boolean, modifier: Modifier = M
                 progress = { (run.index.toFloat() / run.steps.size).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth(),
             )
-            Text(
-                "Machine ${step.exerciseIndex + 1} of $exCount",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(t.headline, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
-            t.exercise?.let {
-                Text(it.name, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-            }
-            t.detail?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
-
-            if (hasTimer) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                workoutIcon(run.workoutName)?.let {
+                    Icon(it, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(6.dp))
+                }
                 Text(
-                    Durations.format(((remaining + 999) / 1000).toInt()),
-                    fontSize = 96.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                    color = if (run.paused) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                )
-                if (run.paused) Text("Paused", Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-            } else {
-                val rest = t.exercise?.restSec ?: AppState.settings.value.defaultRestSec
-                Text(
-                    if (step.set < step.totalSets) "Rest after this set: ${Durations.format(rest)}"
-                    else "Last set, then ${Durations.format(AppState.settings.value.transitionSec)} to switch machines",
-                    style = MaterialTheme.typography.bodyMedium,
+                    "${run.workoutName} · machine ${step.exerciseIndex + 1} of $exCount",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+
+            Card(colors = CardDefaults.cardColors(containerColor = colors.container, contentColor = colors.content)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(stageIcon(stage), null, Modifier.size(32.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(t.headline, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                    }
+                    t.exercise?.let { Text(it.name, style = MaterialTheme.typography.titleLarge) }
+                    t.detail?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
+                    if (hasTimer) {
+                        Text(
+                            Durations.format(((remaining + 999) / 1000).toInt()),
+                            fontSize = 88.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (run.paused) Text("Paused", Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                    } else {
+                        val rest = t.exercise?.restSec ?: AppState.settings.value.defaultRestSec
+                        Text(
+                            if (step.set < step.totalSets) "Rest after this set: ${Durations.format(rest)}"
+                            else "Last set, then ${Durations.format(AppState.settings.value.transitionSec)} to switch machines",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -120,18 +146,38 @@ fun RunScreen(run: RunState, plan: Plan, locked: Boolean, modifier: Modifier = M
                 }
             }
 
-            t.exercise?.let { e ->
-                ExerciseCard(wi, step.exerciseIndex, e, locked, showName = false)
+            workout?.exercises?.forEachIndexed { i, e ->
+                ExerciseCard(
+                    wi, i, e, locked,
+                    expanded = i in expanded,
+                    onToggle = { expanded = if (i in expanded) expanded - i else expanded + i },
+                    highlight = i == step.exerciseIndex,
+                    done = i < step.exerciseIndex,
+                )
             }
             TextButton(onClick = { confirmEnd = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("End workout")
+                Icon(Icons.Filled.Stop, null); Spacer(Modifier.width(4.dp)); Text("End workout")
             }
         }
         Surface(tonalElevation = 3.dp) {
+            val go = step.kind == StepKind.SET || step.kind == StepKind.TRANSITION ||
+                (step.kind == StepKind.TIMED && !run.counting && !run.paused)
+            val icon = when {
+                step.kind == StepKind.SET -> Icons.Filled.Check
+                step.kind == StepKind.TRANSITION -> Icons.AutoMirrored.Filled.ArrowForward
+                go -> Icons.Filled.PlayArrow
+                step.kind == StepKind.TIMED -> Icons.Filled.Flag
+                else -> Icons.Filled.SkipNext
+            }
             Button(
                 onClick = AppState::primary,
                 modifier = Modifier.fillMaxWidth().padding(16.dp).height(88.dp),
-            ) { Text(t.action, style = MaterialTheme.typography.headlineSmall) }
+                colors = if (go) goButtonColors() else ButtonDefaults.filledTonalButtonColors(),
+            ) {
+                Icon(icon, null, Modifier.size(32.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(t.action, style = MaterialTheme.typography.headlineSmall)
+            }
         }
     }
 
@@ -155,6 +201,8 @@ private fun Finished(run: RunState, modifier: Modifier) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Icon(Icons.Filled.EmojiEvents, null, Modifier.size(96.dp), tint = Color(0xFFF9A825))
+        Spacer(Modifier.height(12.dp))
         Text("Workout complete", style = MaterialTheme.typography.displaySmall, textAlign = TextAlign.Center)
         Spacer(Modifier.height(12.dp))
         Text("${run.workoutName} · ${run.log.size} sets · $mins min", style = MaterialTheme.typography.titleMedium)
@@ -164,6 +212,8 @@ private fun Finished(run: RunState, modifier: Modifier) {
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(24.dp))
-        Button(onClick = AppState::dismissFinished, modifier = Modifier.height(56.dp)) { Text("Close") }
+        Button(onClick = AppState::dismissFinished, modifier = Modifier.height(56.dp)) {
+            Icon(Icons.Filled.Check, null); Spacer(Modifier.width(8.dp)); Text("Close")
+        }
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -56,6 +58,8 @@ fun PlanScreen(plan: Plan, locked: Boolean, onImport: () -> Unit, modifier: Modi
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Icon(Icons.Filled.FitnessCenter, null, Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(12.dp))
             Text("No plan yet", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(8.dp))
             Text(
@@ -76,6 +80,8 @@ fun PlanScreen(plan: Plan, locked: Boolean, onImport: () -> Unit, modifier: Modi
     val wi = selected.coerceIn(0, (plan.workouts.size - 1).coerceAtLeast(0))
     val workout = plan.workouts.getOrNull(wi)
     var confirmDelete by remember { mutableStateOf(false) }
+    // Exercise cards start collapsed; tap one to open it.
+    var expanded by remember(wi) { mutableStateOf(setOf<Int>()) }
 
     Column(modifier.fillMaxSize()) {
         LazyColumn(
@@ -91,6 +97,7 @@ fun PlanScreen(plan: Plan, locked: Boolean, onImport: () -> Unit, modifier: Modi
                             selected = i == wi,
                             onClick = { selected = i },
                             label = { Text(if (isToday) "${w.name} · today" else w.name) },
+                            leadingIcon = workoutIcon(w.name)?.let { icon -> { Icon(icon, null, Modifier.size(18.dp)) } },
                         )
                     }
                     if (!locked) {
@@ -116,6 +123,8 @@ fun PlanScreen(plan: Plan, locked: Boolean, onImport: () -> Unit, modifier: Modi
                 itemsIndexed(workout.exercises) { i, e ->
                     ExerciseCard(
                         wi, i, e, locked,
+                        expanded = i in expanded,
+                        onToggle = { expanded = if (i in expanded) expanded - i else expanded + i },
                         canMove = (i > 0) to (i < workout.exercises.lastIndex),
                     )
                 }
@@ -134,6 +143,7 @@ fun PlanScreen(plan: Plan, locked: Boolean, onImport: () -> Unit, modifier: Modi
                 Button(
                     onClick = { AppState.start(workout) },
                     modifier = Modifier.fillMaxWidth().padding(16.dp).height(64.dp),
+                    colors = goButtonColors(),
                 ) {
                     Icon(Icons.Filled.PlayArrow, null)
                     Spacer(Modifier.width(8.dp))

@@ -3,6 +3,22 @@ package gymhelper.app.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -108,17 +124,52 @@ fun LastNextText(last: String?, next: String, big: Boolean = false) {
     )
 }
 
+/** Photo thumbnail; tap to see the whole picture (pinch to zoom). */
 @Composable
 fun PlanImage(path: String?, modifier: Modifier = Modifier) {
     val bmp by produceState<Bitmap?>(null, path) {
         value = withContext(Dispatchers.IO) { AppState.imageFile(path)?.let { decodeSampled(it, 900) } }
     }
+    var full by remember { mutableStateOf(false) }
     bmp?.let {
         Image(
-            it.asImageBitmap(), contentDescription = null,
-            modifier = modifier.clip(RoundedCornerShape(12.dp)),
+            it.asImageBitmap(), contentDescription = "Photo, tap to enlarge",
+            modifier = modifier.clip(RoundedCornerShape(12.dp)).clickable { full = true },
             contentScale = ContentScale.Crop,
         )
+    }
+    if (full) FullImage(path) { full = false }
+}
+
+@Composable
+private fun FullImage(path: String?, onDismiss: () -> Unit) {
+    val bmp by produceState<Bitmap?>(null, path) {
+        value = withContext(Dispatchers.IO) { AppState.imageFile(path)?.let { decodeSampled(it, 2400) } }
+    }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val state = rememberTransformableState { zoom, pan, _ ->
+        scale = (scale * zoom).coerceIn(1f, 6f)
+        offset = if (scale == 1f) Offset.Zero else offset + pan
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black).clickable { onDismiss() },
+            contentAlignment = Alignment.Center,
+        ) {
+            bmp?.let {
+                Image(
+                    it.asImageBitmap(), contentDescription = null,
+                    modifier = Modifier.fillMaxSize()
+                        .graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y)
+                        .transformable(state),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
+                Icon(Icons.Filled.Close, "Close", tint = Color.White)
+            }
+        }
     }
 }
 
@@ -132,7 +183,7 @@ private fun decodeSampled(f: File, maxSide: Int): Bitmap? {
 
 /**
  * One exercise with all its properties. Locked: read-only, each value shown as last → next.
- * Unlocked: every field editable in place.
+ * Unlocked: every field editable in place. Collapsed: just the name and a one-line summary.
  */
 @Composable
 fun ExerciseCard(
@@ -141,8 +192,10 @@ fun ExerciseCard(
     exercise: Exercise,
     locked: Boolean,
     modifier: Modifier = Modifier,
-    showName: Boolean = true,
-    showImage: Boolean = true,
+    expanded: Boolean = true,
+    onToggle: (() -> Unit)? = null,
+    highlight: Boolean = false,
+    done: Boolean = false,
     canMove: Pair<Boolean, Boolean>? = null,
 ) {
     val history by AppState.history.collectAsStateWithLifecycle()
@@ -150,24 +203,50 @@ fun ExerciseCard(
     var showProgress by remember { mutableStateOf(false) }
     fun update(f: (Exercise) -> Exercise) = AppState.updateExercise(workoutIndex, exerciseIndex, f)
 
-    Card(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (showName) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (locked) {
-                        Text(exercise.name, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                        if (last != null) IconButton(onClick = { showProgress = true }) { Icon(Icons.AutoMirrored.Filled.ShowChart, "Progress") }
+    Card(
+        modifier.fillMaxWidth(),
+        border = if (highlight) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().let { m -> if (onToggle != null) m.clickable { onToggle() } else m },
+            ) {
+                Icon(
+                    if (done) Icons.Filled.CheckCircle else exerciseIcon(exercise), null,
+                    tint = if (done) GoGreen else MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                    if (!locked && expanded) {
+                        EditField(exercise.name, { v -> update { it.copy(name = v) } }, Modifier.fillMaxWidth(), label = "Name")
                     } else {
-                        EditField(exercise.name, { v -> update { it.copy(name = v) } }, Modifier.weight(1f), label = "Name")
-                        canMove?.let { (up, down) ->
-                            IconButton(onClick = { moveExercise(workoutIndex, exerciseIndex, -1) }, enabled = up) { Icon(Icons.Filled.KeyboardArrowUp, "Move up") }
-                            IconButton(onClick = { moveExercise(workoutIndex, exerciseIndex, 1) }, enabled = down) { Icon(Icons.Filled.KeyboardArrowDown, "Move down") }
-                            IconButton(onClick = { deleteExercise(workoutIndex, exerciseIndex) }) { Icon(Icons.Filled.Delete, "Delete exercise") }
+                        Text(exercise.name, style = MaterialTheme.typography.titleMedium)
+                        if (!expanded) {
+                            Text(summary(exercise), style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
+                if (locked && expanded && last != null) {
+                    IconButton(onClick = { showProgress = true }) { Icon(Icons.AutoMirrored.Filled.ShowChart, "Progress") }
+                }
+                if (onToggle != null) {
+                    Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, if (expanded) "Collapse" else "Expand")
+                }
             }
-            if (showImage && exercise.image != null) PlanImage(exercise.image, Modifier.fillMaxWidth().height(170.dp))
+            if (!expanded) return@Column
+
+            if (!locked && canMove != null) {
+                val (up, down) = canMove
+                Row {
+                    IconButton(onClick = { moveExercise(workoutIndex, exerciseIndex, -1) }, enabled = up) { Icon(Icons.Filled.KeyboardArrowUp, "Move up") }
+                    IconButton(onClick = { moveExercise(workoutIndex, exerciseIndex, 1) }, enabled = down) { Icon(Icons.Filled.KeyboardArrowDown, "Move down") }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { deleteExercise(workoutIndex, exerciseIndex) }) { Icon(Icons.Filled.Delete, "Delete exercise") }
+                }
+            }
+            if (exercise.image != null) PlanImage(exercise.image, Modifier.fillMaxWidth().height(170.dp))
 
             exercise.props.forEachIndexed { i, p ->
                 if (exercise.isTextProp(p.key)) return@forEachIndexed
@@ -212,6 +291,7 @@ fun ExerciseCard(
                     }
                 }
             }
+            Spacer(Modifier.height(4.dp))
         }
     }
     if (showProgress) ProgressDialog(exercise) { showProgress = false }

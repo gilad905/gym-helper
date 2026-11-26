@@ -11,12 +11,14 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,6 +63,7 @@ fun GymAppUi() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var pendingImport by remember { mutableStateOf<Plan?>(null) }
+    var confirmCancel by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -106,16 +109,18 @@ fun GymAppUi() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (run != null) run!!.workoutName else plan.title) },
+                title = { Text(if (locked) "Gym Helper" else "Editing") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = if (locked) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.tertiaryContainer,
                 ),
                 actions = {
-                    IconButton(onClick = AppState::toggleLock) {
-                        Icon(
-                            if (locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                            contentDescription = if (locked) "Unlock editing" else "Lock editing",
-                        )
+                    if (locked) {
+                        IconButton(onClick = AppState::unlock) { Icon(Icons.Filled.Lock, "Unlock editing") }
+                    } else {
+                        TextButton(onClick = {
+                            if (AppState.hasUnsavedEdits()) confirmCancel = true else AppState.cancelEdits()
+                        }) { Icon(Icons.Filled.Close, null); Text("Cancel") }
+                        Button(onClick = AppState::saveEdits) { Icon(Icons.Filled.Check, null); Text("Save") }
                     }
                     IconButton(onClick = AppState::toggleMute) {
                         Icon(
@@ -154,6 +159,16 @@ fun GymAppUi() {
             1 -> HistoryScreen(locked, m)
             else -> SettingsScreen(settings, onImport, onExport, m)
         }
+    }
+
+    if (confirmCancel) {
+        AlertDialog(
+            onDismissRequest = { confirmCancel = false },
+            title = { Text("Discard your changes?") },
+            text = { Text("Everything you changed since unlocking goes back to how it was.") },
+            confirmButton = { TextButton(onClick = { confirmCancel = false; AppState.cancelEdits() }) { Text("Discard") } },
+            dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text("Keep editing") } },
+        )
     }
 
     pendingImport?.let { p ->
