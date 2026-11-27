@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +51,7 @@ fun HistoryScreen(locked: Boolean, modifier: Modifier = Modifier) {
     val history by AppState.history.collectAsStateWithLifecycle()
     val sessions = remember(history) { history.sessions.sortedByDescending { it.startedAt } }
     var toDelete by remember { mutableStateOf<Session?>(null) }
+    var confirmAll by remember { mutableStateOf(false) }
 
     if (sessions.isEmpty()) {
         Column(modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center,
@@ -62,6 +64,14 @@ fun HistoryScreen(locked: Boolean, modifier: Modifier = Modifier) {
     }
 
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${sessions.size} workouts", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { confirmAll = true }) {
+                    Icon(Icons.Filled.DeleteSweep, null); Spacer(Modifier.width(4.dp)); Text("Delete all")
+                }
+            }
+        }
         items(sessions, key = { it.id }) { s ->
             var open by rememberSaveable(s.id) { mutableStateOf(false) }
             Card(Modifier.fillMaxWidth().clickable { open = !open }) {
@@ -78,7 +88,7 @@ fun HistoryScreen(locked: Boolean, modifier: Modifier = Modifier) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        if (!locked) IconButton(onClick = { toDelete = s }) { Icon(Icons.Filled.Delete, "Delete session") }
+                        IconButton(onClick = { toDelete = s }) { Icon(Icons.Filled.Delete, "Delete session") }
                     }
                     if (open) {
                         for ((_, sets) in s.byExercise()) {
@@ -95,6 +105,16 @@ fun HistoryScreen(locked: Boolean, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+
+    if (confirmAll) {
+        AlertDialog(
+            onDismissRequest = { confirmAll = false },
+            title = { Text("Delete all history?") },
+            text = { Text("All ${sessions.size} workouts will be deleted for good, and the last → next values start over. Export first if you want a copy.") },
+            confirmButton = { TextButton(onClick = { AppState.deleteAllSessions(); confirmAll = false }) { Text("Delete all") } },
+            dismissButton = { TextButton(onClick = { confirmAll = false }) { Text("Cancel") } },
+        )
     }
 
     toDelete?.let { s ->

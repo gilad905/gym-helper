@@ -158,6 +158,7 @@ object AppState {
     // ---- history ----
 
     fun deleteSession(id: Long) { _history.value = _history.value.remove(id) }
+    fun deleteAllSessions() { _history.value = History() }
 
     // ---- workout run ----
 
