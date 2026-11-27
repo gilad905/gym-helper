@@ -134,7 +134,7 @@ class WorkoutService : LifecycleService() {
         )
         if (Build.VERSION.SDK_INT >= 36) {
             // Android 16+ Live Update: shows a chip next to the clock in the status bar.
-            b.setRequestPromotedOngoing(true)
+            b.extras.putBoolean(Notification.EXTRA_REQUEST_PROMOTED_ONGOING, true)
             b.setShortCriticalText(time ?: "Set ${step.set}/${step.totalSets}")
         }
         b.addAction(Notification.Action.Builder(null, t.action, service(ACTION_PRIMARY, 1)).build())
