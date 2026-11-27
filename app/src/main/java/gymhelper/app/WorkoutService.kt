@@ -7,9 +7,9 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
-import android.os.Bundle
 import android.os.PowerManager
-import androidx.core.app.NotificationCompat
+import gymhelper.core.Durations
+import gymhelper.core.StepKind
 import androidx.core.app.ServiceCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
@@ -71,10 +71,13 @@ class WorkoutService : LifecycleService() {
                     stopSelfCleanly()
                     break
                 }
-                val key = listOf(run.index, run.endsAt, run.pausedRemaining, AppState.settings.value.muted, AppState.plan.value.hashCode())
+                val secs = run.remainingMs(AppState.now()) / 1000
+                val key = listOf(run.index, secs, run.paused, AppState.settings.value.muted, AppState.plan.value.hashCode())
                 if (key != lastKey) {
+                    val first = lastKey == null
                     lastKey = key
                     getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
+                    if (first || secs % 10 == 0L) checkPromoted()
                 }
                 delay(250)
             }
@@ -99,49 +102,59 @@ class WorkoutService : LifecycleService() {
             this, 0, Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val b = NotificationCompat.Builder(this, CHANNEL)
+        val b = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_stat)
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setCategory(Notification.CATEGORY_STOPWATCH)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setShowWhen(false)
+        if (Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE)
         if (run == null || run.done) {
             return b.setContentTitle("Gym Helper").setContentText("Workout finished").build()
         }
         val t = describe(run, plan)
-        val name = t.exercise?.name ?: run.workoutName
-        val title = if (run.step?.kind == gymhelper.core.StepKind.TRANSITION) "Moving to $name" else name
-        b.setContentTitle(title)
-        // Android 16+ "Live Update": shows the countdown as a chip in the status bar, next to the
-        // clock, like the Clock app's timer. Short text is what the chip shows when no timer runs.
-        b.addExtras(Bundle().apply {
-            putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true)
-            putString(EXTRA_SHORT_CRITICAL_TEXT, chipText(run, t.short))
-        })
-        val end = run.endsAt
-        when {
-            end != null -> {
-                b.setContentText(t.short)
-                b.setWhen(end).setShowWhen(true).setUsesChronometer(true).setChronometerCountDown(true)
-            }
-            run.paused -> b.setContentText("${t.short} · paused ${gymhelper.core.Durations.format(((run.pausedRemaining ?: 0) / 1000).toInt())}")
-            else -> b.setContentText(t.short).setShowWhen(false)
+        val step = run.step!!
+        val counting = step.kind != StepKind.SET && (run.counting || run.paused)
+        val time = if (counting || step.kind != StepKind.SET) Durations.format(((run.remainingMs(AppState.now()) + 999) / 1000).toInt()) else null
+        val stage = when (step.kind) {
+            StepKind.SET -> t.headline                       // "Set 2 of 3"
+            StepKind.REST -> "Rest"
+            StepKind.TRANSITION -> "Next machine"
+            StepKind.TIMED -> t.headline                     // "Warmup", "Main walk", ...
+        } + if (run.paused) " (paused)" else ""
+        // Big line: the countdown and stage. Small line: the machine, once.
+        b.setContentTitle(if (time != null) "$time · $stage" else stage)
+        b.setContentText(
+            when (step.kind) {
+                StepKind.REST -> "${t.exercise?.name ?: ""} · next: set ${step.set + 1} of ${step.totalSets}"
+                else -> t.exercise?.name ?: run.workoutName
+            },
+        )
+        if (Build.VERSION.SDK_INT >= 36) {
+            // Android 16+ Live Update: shows a chip next to the clock in the status bar.
+            b.setRequestPromotedOngoing(true)
+            b.setShortCriticalText(time ?: "Set ${step.set}/${step.totalSets}")
         }
-        b.addAction(0, t.action, service(ACTION_PRIMARY, 1))
-        b.addAction(0, if (AppState.settings.value.muted) "Unmute" else "Mute", service(ACTION_MUTE, 2))
+        b.addAction(Notification.Action.Builder(null, t.action, service(ACTION_PRIMARY, 1)).build())
+        b.addAction(Notification.Action.Builder(null, if (AppState.settings.value.muted) "Unmute" else "Mute", service(ACTION_MUTE, 2)).build())
         return b.build()
     }
 
-    private fun chipText(run: gymhelper.core.RunState, short: String): String {
-        val step = run.step ?: return "Done"
-        if (run.paused) return "Paused"
-        return when (step.kind) {
-            gymhelper.core.StepKind.SET -> "Set ${step.set}/${step.totalSets}"
-            gymhelper.core.StepKind.TRANSITION -> "Move"
-            else -> short.take(10)
+    /** Whether Android shows our notification as a Live Update (status bar chip), for Settings. */
+    private fun checkPromoted() {
+        if (Build.VERSION.SDK_INT < 36) {
+            AppState.liveUpdateStatus.value = "Needs Android 16 or newer"
+            return
+        }
+        val nm = getSystemService(NotificationManager::class.java)
+        val n = nm.activeNotifications.firstOrNull { it.id == NOTIFICATION_ID }?.notification ?: return
+        AppState.liveUpdateStatus.value = when {
+            !nm.canPostPromotedNotifications() -> "Turned off for this app in system settings"
+            (n.flags and Notification.FLAG_PROMOTED_ONGOING) != 0 -> "On (Android accepted the Live Update)"
+            !n.hasPromotableCharacteristics() -> "Not eligible (notification format)"
+            else -> "Requested, but the system didn't promote it"
         }
     }
 
@@ -157,8 +170,5 @@ class WorkoutService : LifecycleService() {
         const val ACTION_SKIP = "skip"
         const val ACTION_MUTE = "mute"
         const val ACTION_STOP = "stop"
-        // Notification.EXTRA_REQUEST_PROMOTED_ONGOING / EXTRA_SHORT_CRITICAL_TEXT (API 36).
-        const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
-        const val EXTRA_SHORT_CRITICAL_TEXT = "android.shortCriticalText"
     }
 }

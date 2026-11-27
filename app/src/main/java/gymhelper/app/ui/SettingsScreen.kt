@@ -1,6 +1,12 @@
 package gymhelper.app.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.provider.Settings as SysSettings
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +55,14 @@ fun SettingsScreen(settings: Settings, onImport: () -> Unit, onExport: () -> Uni
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        val live by AppState.liveUpdateStatus.collectAsStateWithLifecycle()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Status bar timer (Live Update)")
+                Text(live, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            OutlinedButton(onClick = { openNotificationSettings(ctx) }) { Text("Settings") }
+        }
         SwitchRow("Keep screen on during workouts", settings.keepScreenOn) { v -> AppState.updateSettings { it.copy(keepScreenOn = v) } }
 
         HorizontalDivider()
@@ -66,6 +80,22 @@ fun SettingsScreen(settings: Settings, onImport: () -> Unit, onExport: () -> Uni
         HorizontalDivider()
         val version = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull()
         Text("Gym Helper $version", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** Opens the Live Update toggle for this app if the system has one, else its notification settings. */
+private fun openNotificationSettings(ctx: Context) {
+    val pkg = ctx.packageName
+    val tries = listOf(
+        Intent("android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS").putExtra(SysSettings.EXTRA_APP_PACKAGE, pkg),
+        Intent(SysSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(SysSettings.EXTRA_APP_PACKAGE, pkg),
+    )
+    for (i in tries) {
+        try {
+            ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        } catch (_: ActivityNotFoundException) {
+        }
     }
 }
 

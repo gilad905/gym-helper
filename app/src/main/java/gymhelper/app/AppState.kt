@@ -66,6 +66,9 @@ object AppState {
     /** Plan editing lock. Always starts locked. */
     val locked: StateFlow<Boolean> = _locked
 
+    /** Live Update (status bar chip) diagnosis, shown in Settings. */
+    val liveUpdateStatus = MutableStateFlow("Start a workout to check")
+
     /** The plan as it was when editing was unlocked; Cancel goes back to it. */
     private var draftBase: Plan? = null
 
